@@ -363,7 +363,9 @@ def main() -> None:
                 "business_category": "Private Organization",
                 "serial_number": "1",
                 "country_name": "US",
+                "common_name": get_name("EV Certificate"),
                 "organization_name": "PayPal, Inc.",
+                "organizational_unit_name": get_name("EV Certificate"),
             }
         ),
         ("localhost", "nsa.gov", "www.nsa.gov", "microsoft.com", "www.microsoft.com"),
