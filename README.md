@@ -2,8 +2,9 @@
 
 Proof of Concept for CVE-2020-0601.
 
-![Screenshot of EV Certificate for www.nsa.gov in Microsoft Edge](screenshot.png)
+![Screenshot of Extended Validation certificate for www.nsa.gov in Microsoft Edge](screenshot.png)
 ![Screenshot of 7-Zip installer with Authenticode digital signature](screenshot2.png)
+![Screenshot of certificate for www.nsa.gov in Google Chrome](screenshot3.png)
 
 [badecparams.py](badecparams.py) generates an intermediate certificate
 authority that exploits the vulnerability, then issues Authenticode and TLS
