@@ -8,8 +8,5 @@ __pycache__/
 *.der
 *.exe
 *.key
-*.pem
 *.pvk
 *.spc
-
-!cacerts.pem
