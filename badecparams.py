@@ -225,6 +225,7 @@ def write_tls_certificate(
 
 def write_authenticode_certificate(
     ca_cert: x509.Certificate,
+    ca_cert_orig: x509.Certificate,
     signing_key: ecdsa.keys.SigningKey,
     name: str,
     subject: x509.Name,
@@ -279,6 +280,7 @@ def write_authenticode_certificate(
 
     with open(name + ".crt", "wb") as f:
         write_pem(f, certificate, "CERTIFICATE")
+        write_pem(f, ca_cert_orig, "CERTIFICATE")
         write_pem(f, ca_cert, "CERTIFICATE")
 
     with open(name + ".key", "wb") as f:
@@ -337,6 +339,7 @@ def main() -> None:
 
     write_authenticode_certificate(
         ca_cert,
+        ca_cert_orig,
         signing_key,
         "authenticode",
         x509.Name.build(
