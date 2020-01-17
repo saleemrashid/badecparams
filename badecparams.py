@@ -13,7 +13,7 @@ import ecdsa.util
 from asn1crypto import core, keys, pem, x509
 
 
-def cacert_certificates(filename: str) -> Iterable[x509.Certificate]:
+def load_certificate_chain(filename: str) -> Iterable[x509.Certificate]:
     with open(
         os.path.join(os.path.dirname(os.path.abspath(__file__)), filename), "rb"
     ) as f:
@@ -321,18 +321,18 @@ def get_name(purpose: Optional[str] = None) -> str:
 
 
 def main() -> None:
-    _, ca_cert, _ = cacert_certificates(
+    _, ca_cert, _ = load_certificate_chain(
         "comodoecccertificationauthority-ev-comodoca-com-chain.pem"
     )
     ca_cert_orig = ca_cert.copy()
 
     signing_key, ec_private_key = exploit_certificate(ca_cert)
 
-    with open("rootCA.crt", "wb") as f:
+    with open("intermediateCA.crt", "wb") as f:
         write_pem(f, ca_cert_orig, "CERTIFICATE")
         write_pem(f, ca_cert, "CERTIFICATE")
 
-    with open("rootCA.key", "wb") as f:
+    with open("intermediateCA.key", "wb") as f:
         write_pem(f, ec_private_key, "EC PRIVATE KEY")
 
     write_authenticode_certificate(
