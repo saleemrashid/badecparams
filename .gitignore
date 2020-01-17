@@ -13,3 +13,4 @@ __pycache__/
 *.spc
 
 !cacerts.pem
+!2842897.pem

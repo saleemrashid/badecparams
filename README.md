@@ -22,15 +22,10 @@ to the TLS variant. Firefox is not vulnerable because Mozilla's Network
 Security Services (NSS) does not support explicit EC parameters and uses its
 own implementation for certificate verification.
 
-The root certificate authority needs to be cached in order for the
-vulnerability to occur. For example, the "GlobalSign ECC Root CA - R5"
-certificate used by `badecparams.py` can be cached by accessing a legitimate
-website using this certificate authority, such as https://www.bbc.co.uk.
-
 ### Extended Validation
 
-While it is possible to issue an EV certificate that works in Microsoft Edge,
-it will cause Chrome to throw `NET::ERR_CERT_AUTHORITY_INVALID`. This is
-because Chrome checks the root certificate of EV certificates against a
-hardcoded list, and will detect that the SHA-256 fingerprint of our modified
-certificate does not match.
+As demonstrated in badecparams.py, it is possible to issue an EV certificate
+that works in Microsoft Edge and Internet Explorer. However Chrome requires
+certificate transparency logs for EV certificate issued after 2015/01/01, if CT
+log is not available, the certificate still validates, but no EV indicators
+will be shown.
