@@ -1,0 +1,15 @@
+.mypy_cache/
+__pycache__/
+*.py[cod]
+
+*.bak
+*.cer
+*.crt
+*.der
+*.exe
+*.key
+*.pem
+*.pvk
+*.spc
+
+!cacerts.pem
