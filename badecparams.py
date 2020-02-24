@@ -12,6 +12,8 @@ import ecdsa.numbertheory
 import ecdsa.util
 from asn1crypto import core, keys, pem, x509
 
+OPENSSL = "openssl"
+
 
 def load_certificate_chain(filename: str) -> Iterable[x509.Certificate]:
     with open(
@@ -28,7 +30,7 @@ def load_certificate_chain(filename: str) -> Iterable[x509.Certificate]:
 def generate_ec_private_key(name: str) -> keys.ECPrivateKey:
     der_bytes = subprocess.check_output(
         (
-            "openssl",
+            OPENSSL,
             "ecparam",
             "-name",
             name,
@@ -119,33 +121,20 @@ def write_pem(f: BinaryIO, value: core.Asn1Value, object_type: str) -> None:
 
 
 def generate_private_key(
-    algorithm: str,
+    algorithm: str, **kwargs: str,
 ) -> Tuple[keys.PrivateKeyInfo, keys.PublicKeyInfo]:
-    pem_bytes = subprocess.check_output(
-        (
-            "openssl",
-            "req",
-            "-pubkey",
-            "-noout",
-            "-newkey",
-            algorithm,
-            "-keyout",
-            "-",
-            "-nodes",
-            "-batch",
-            "-outform",
-            "PEM",
-        )
+    genpkey_args = [OPENSSL, "genpkey", "-algorithm", algorithm, "-outform", "DER"]
+    for opt, value in kwargs.items():
+        genpkey_args.extend(("-pkeyopt", "{}:{}".format(opt, value)))
+
+    private_key_bytes = subprocess.check_output(genpkey_args)
+    private_key = keys.PrivateKeyInfo.load(private_key_bytes)
+
+    public_key_bytes = subprocess.check_output(
+        (OPENSSL, "pkey", "-pubout", "-inform", "DER", "-outform", "DER"),
+        input=private_key_bytes,
     )
-    pem_iter = pem.unarmor(pem_bytes, multiple=True)
-
-    object_type, _, der_bytes = next(pem_iter)
-    assert object_type == "PRIVATE KEY"
-    private_key = keys.PrivateKeyInfo.load(der_bytes)
-
-    object_type, _, der_bytes = next(pem_iter)
-    assert object_type == "PUBLIC KEY"
-    public_key = keys.PublicKeyInfo.load(der_bytes)
+    public_key = keys.PublicKeyInfo.load(public_key_bytes)
 
     return private_key, public_key
 
@@ -162,7 +151,7 @@ def write_tls_certificate(
     subject: x509.Name,
     subject_alt_names: Sequence[str],
 ) -> None:
-    private_key, public_key = generate_private_key("rsa:4096")
+    private_key, public_key = generate_private_key("RSA", rsa_keygen_bits=4096)
     signed_digest_algorithm = x509.SignedDigestAlgorithm({"algorithm": "sha256_ecdsa"})
 
     certificate = x509.Certificate(
@@ -217,7 +206,7 @@ def write_tls_certificate(
         write_pem(f, ca_cert, "CERTIFICATE")
 
     with open(name + ".key", "wb") as f:
-        write_pem(f, private_key, "PRIVATE KEY")
+        write_pem(f, private_key, "RSA PRIVATE KEY")
         write_pem(f, certificate, "CERTIFICATE")
         write_pem(f, ca_cert_orig, "CERTIFICATE")
         write_pem(f, ca_cert, "CERTIFICATE")
@@ -230,7 +219,7 @@ def write_authenticode_certificate(
     name: str,
     subject: x509.Name,
 ) -> None:
-    private_key, public_key = generate_private_key("rsa:4096")
+    private_key, public_key = generate_private_key("RSA", rsa_keygen_bits=4096)
     signed_digest_algorithm = x509.SignedDigestAlgorithm({"algorithm": "sha256_ecdsa"})
 
     certificate = x509.Certificate(
@@ -284,7 +273,7 @@ def write_authenticode_certificate(
         write_pem(f, ca_cert, "CERTIFICATE")
 
     with open(name + ".key", "wb") as f:
-        write_pem(f, private_key, "PRIVATE KEY")
+        write_pem(f, private_key, "RSA PRIVATE KEY")
 
     subprocess.check_call(
         (
