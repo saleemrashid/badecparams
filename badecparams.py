@@ -121,7 +121,7 @@ def write_pem(f: BinaryIO, value: core.Asn1Value, object_type: str) -> None:
 
 
 def generate_private_key(
-    algorithm: str, **kwargs: str,
+    algorithm: str, **kwargs: object,
 ) -> Tuple[keys.PrivateKeyInfo, keys.PublicKeyInfo]:
     genpkey_args = [OPENSSL, "genpkey", "-algorithm", algorithm, "-outform", "DER"]
     for opt, value in kwargs.items():
