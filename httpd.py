@@ -12,14 +12,12 @@ def main(certfile: str) -> None:
     handler_class = functools.partial(
         http.server.SimpleHTTPRequestHandler, directory=WWW_DIRECTORY
     )
-    server = http.server.HTTPServer(("0.0.0.0", 443), handler_class)
-    server.socket = ssl.wrap_socket(
-        server.socket,
-        server_side=True,
-        certfile=certfile,
-        ssl_version=ssl.PROTOCOL_TLSv1_2,
-    )
-    server.serve_forever()
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(certfile=certfile)
+
+    with http.server.HTTPServer(("0.0.0.0", 443), handler_class) as httpd:
+      httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
+      httpd.serve_forever()
 
 
 if __name__ == "__main__":
