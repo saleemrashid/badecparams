@@ -1,0 +1,10 @@
+[project]
+name = "badecparams"
+version = "0.1.0"
+description = "Proof of Concept for CVE-2020-0601"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "asn1crypto>=1.5.1",
+    "ecdsa>=0.19.2",
+]
